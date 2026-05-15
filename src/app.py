@@ -45,7 +45,10 @@ from src.icp_scoring import calculate_icp_fit_score
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
+app_dir = os.path.dirname(os.path.abspath(__file__))
+static_folder = os.path.join(app_dir, '..', 'frontend', 'dist')
+
+app = Flask(__name__, static_folder=static_folder, static_url_path='')
 CORS(app, supports_credentials=True)
 
 # Initialize databases
