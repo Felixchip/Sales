@@ -49,19 +49,30 @@ logger = logging.getLogger(__name__)
 logger.info(f"CWD: {os.getcwd()}")
 logger.info(f"App Dir: {os.path.dirname(os.path.abspath(__file__))}")
 
-def find_index_html(start_path):
+def find_index_html_paths(start_path):
+    matches = []
     for root, dirs, files in os.walk(start_path):
         if 'index.html' in files:
-            # Check if it's in a 'dist' or 'frontend' folder to avoid picking up source templates
-            if 'dist' in root or 'frontend' in root:
-                return root
-    return None
+            matches.append(root)
+    return matches
 
-static_folder = find_index_html('/app') or find_index_html(os.getcwd())
+found_paths = find_index_html_paths('/app') + find_index_html_paths(os.getcwd())
+logger.info(f"All found index.html paths: {found_paths}")
+
+# Prioritize paths containing 'dist'
+static_folder = None
+for path in found_paths:
+    if 'dist' in path:
+        static_folder = path
+        break
+
+if not static_folder and found_paths:
+    # Fallback to any path that isn't the root or a known source folder if possible
+    static_folder = found_paths[0]
 
 if not static_folder:
     logger.error("COULD NOT FIND INDEX.HTML ANYWHERE IN /APP")
-    static_folder = os.path.join(os.getcwd(), 'frontend', 'dist') # Default fallback
+    static_folder = os.path.join(os.getcwd(), 'frontend', 'dist')
 
 logger.info(f"Discovered static folder: {static_folder}")
 
