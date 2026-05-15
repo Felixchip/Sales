@@ -1,7 +1,9 @@
 {
   "$schema": "https://schema.railpack.com",
   "provider": "python",
-  "packages": ["nodejs"],
+  "packages": {
+    "node": "22"
+  },
   "build": {
     "steps": {
       "build": {
