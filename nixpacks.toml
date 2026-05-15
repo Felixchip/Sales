@@ -5,4 +5,4 @@ nixPkgs = ["python311", "nodejs_22"]
 cmds = ["pip install -r requirements.txt", "npm install --prefix frontend"]
 
 [start]
-cmd = "npm run build --prefix frontend && gunicorn --bind 0.0.0.0:$PORT src.app:app"
+cmd = "echo 'BUILDING FRONTEND...' && npm run build --prefix frontend && echo 'BUILD COMPLETE' && ls -R frontend/dist && gunicorn --bind 0.0.0.0:$PORT src.app:app"

@@ -61,16 +61,41 @@ def get_product_id():
     """Helper to extract product_id from headers or args"""
     return request.headers.get('X-Product-Id', request.args.get('product_id', 'echotray'))
 
+# Bulletproof Static Folder Discovery
+def get_static_folder():
+    cwd = os.getcwd()
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    candidates = [
+        os.path.join(cwd, 'frontend', 'dist'),
+        os.path.join(app_dir, '..', 'frontend', 'dist'),
+        '/app/frontend/dist',
+        os.path.join(cwd, 'dist'),
+    ]
+    
+    for cand in candidates:
+        if os.path.exists(os.path.join(cand, 'index.html')):
+            return cand
+    return candidates[0]
+
+static_folder = get_static_folder()
+app = Flask(__name__, static_folder=static_folder, static_url_path='')
+CORS(app, supports_credentials=True)
+
 @app.route('/')
 def index():
-    if os.path.exists(os.path.join(static_folder, 'index.html')):
+    index_path = os.path.join(static_folder, 'index.html')
+    if os.path.exists(index_path):
         return send_from_directory(static_folder, 'index.html')
+    
+    # Debug info if still failing
     return jsonify({
-        "status": "running",
-        "service": "Verify & Personalize API",
-        "version": "1.0",
-        "note": "Frontend dist/index.html not found. Build may be in progress."
-    })
+        "error": "Frontend not found",
+        "searched_path": static_folder,
+        "cwd": os.getcwd(),
+        "ls_frontend": os.listdir('frontend') if os.path.exists('frontend') else "not found",
+        "ls_root": os.listdir('.')
+    }), 404
 
 # ============ PRODUCT MANAGEMENT ENDPOINTS ============
 
