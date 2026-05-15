@@ -1,0 +1,68 @@
+source_name,feed_url,category
+Slack Blog,https://slack.com/blog/rss,productivity
+Atlassian Work Life,https://www.atlassian.com/blog/feed,productivity
+Google Workspace Updates,https://workspaceupdates.googleblog.com/feeds/posts/default,productivity
+Microsoft 365 Blog,https://techcommunity.microsoft.com/gxcuf89792/rss/Board:Microsoft_365,productivity
+Zoom Blog,https://blog.zoom.us/feed/,productivity
+Notion Blog,https://www.notion.so/blog/rss,productivity
+Asana Blog,https://blog.asana.com/feed/,productivity
+Airtable Blog,https://blog.airtable.com/feed/,productivity
+ClickUp Blog,https://clickup.com/blog/feed/,productivity
+Trello Blog,https://blog.trello.com/rss,productivity
+Linear Blog,https://linear.app/blog/rss.xml,productivity
+Superhuman Blog,https://blog.superhuman.com/rss/,productivity
+Basecamp Signal v. Noise,https://m.signalvnoise.com/feed/,productivity
+Dropbox Tech,https://dropbox.tech/feed,productivity
+Evernote Blog,https://evernote.com/blog/feed/,productivity
+Intercom Blog,https://www.intercom.com/blog/feed/,productivity
+Y Combinator,https://www.ycombinator.com/blog/rss/,startup_vc
+a16z,https://a16z.com/feed/,startup_vc
+Sequoia Capital,https://www.sequoiacap.com/feed/,startup_vc
+Greylock Partners,https://greylock.com/feed/,startup_vc
+Lightspeed Venture Partners,https://lightspeedvp.com/feed/,startup_vc
+Initialized Capital,https://initialized.com/feed/,startup_vc
+Accel,https://www.accel.com/feed/,startup_vc
+Index Ventures,https://www.indexventures.com/feed/,startup_vc
+SaaStr,https://www.saastr.com/feed/,startup_vc
+Techstars,https://www.techstars.com/the-line/feed,startup_vc
+First Round Review,https://review.firstround.com/feed,startup_vc
+Product Hunt Blog,https://blog.producthunt.com/rss,startup_vc
+Lenny's Newsletter,https://lennyrachitsky.substack.com/feed,startup_vc
+Benedict Evans,https://www.ben-evans.com/newsletter?format=rss,startup_vc
+NFX,https://www.nfx.com/post/rss,startup_vc
+OpenView Partners,https://openviewpartners.com/blog/feed/,startup_vc
+Craft Ventures,https://www.craftventures.com/insights/feed.xml,startup_vc
+Andreessen Horowitz Future,https://future.a16z.com/feed/,startup_vc
+Harvard Business Review,https://hbr.org/feed,business
+Forbes Leadership,https://www.forbes.com/leadership/feed/,business
+Fast Company,https://www.fastcompany.com/rss,business
+Inc.com Leadership,https://www.inc.com/rss/leadership,business
+Entrepreneur Magazine,https://www.entrepreneur.com/latest/rss,business
+Business Insider Strategy,https://www.businessinsider.com/sai/rss,business
+WSJ Business Tech,https://feeds.a.dj.com/rss/RSSWSJD.xml,business
+Fortune Leadership,https://fortune.com/feed/,business
+MIT Sloan Management Review,https://sloanreview.mit.edu/feed/,business
+McKinsey Insights,https://www.mckinsey.com/featured-insights/rss,business
+Bloomberg Technology,https://feeds.bloomberg.com/technology/news.rss,tech
+TechCrunch,https://techcrunch.com/feed/,tech
+VentureBeat AI,https://venturebeat.com/category/ai/feed/,tech_ai
+The Verge,https://www.theverge.com/rss/index.xml,tech
+Wired Business,https://www.wired.com/feed/category/business/latest/rss,tech
+Stratechery,https://stratechery.com/feed/,business
+a16z AI Canon,https://a16z.com/ai/feed/,tech_ai
+Cloudflare Blog,https://blog.cloudflare.com/rss/,tech
+OpenAI Blog,https://openai.com/blog/rss.xml,tech_ai
+Google AI Blog,https://ai.googleblog.com/atom.xml,tech_ai
+Microsoft Research Blog,https://www.microsoft.com/en-us/research/feed/,tech_ai
+Hugging Face Blog,https://huggingface.co/blog/feed.xml,tech_ai
+Anthropic Blog,https://www.anthropic.com/news/rss,tech_ai
+Mixpanel Blog,https://mixpanel.com/blog/feed/,productivity
+Amplitude Blog,https://amplitude.com/blog/rss,productivity
+Segment Blog,https://segment.com/blog/rss.xml,productivity
+Reforge Articles,https://www.reforge.com/articles/rss.xml,startup_vc
+Heap Blog,https://www.heap.io/blog/rss.xml,productivity
+Pendo Blog,https://www.pendo.io/feed/,productivity
+FullStory Blog,https://www.fullstory.com/blog/rss/,productivity
+Okta Blog,https://www.okta.com/blog/feed/,tech
+1Password Business,https://blog.1password.com/rss/,tech
+Cloudflare Security,https://blog.cloudflare.com/tag/security/feed/,tech

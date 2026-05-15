@@ -1,0 +1,19 @@
+[project]
+name = "verify-personalize"
+version = "0.1.0"
+description = "Email verification and lead personalization engine"
+requires-python = ">=3.11"
+dependencies = [
+    "flask-cors>=6.0.1",
+    "flask>=3.1.2",
+    "numpy>=2.3.3",
+    "openai>=2.3.0",
+    "python-dotenv>=1.1.1",
+    "redis>=6.4.0",
+    "requests>=2.32.5",
+    "rq>=2.6.0",
+    "tavily-python>=0.7.12",
+    "beautifulsoup4>=4.14.2",
+    "lxml>=6.0.2",
+    "gunicorn>=23.0.0",
+]
