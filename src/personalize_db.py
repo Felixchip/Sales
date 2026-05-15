@@ -1,15 +1,18 @@
 import sqlite3
 import json
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = "personalize.db"
 
 
 def init_db():
     with sqlite3.connect(DB_PATH) as c:
-        # Products table
+        # 1. Products table (new, always created if not exists)
         c.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id TEXT PRIMARY KEY,
@@ -23,139 +26,165 @@ def init_db():
         )
         """)
 
-        # Add product_id to signals if not exists
-        try:
-            c.execute("ALTER TABLE signals ADD COLUMN product_id TEXT DEFAULT 'echotray'")
-        except sqlite3.OperationalError:
-            pass # Column already exists
+        # 2. Check if migration is needed for signals
+        cursor = c.execute("PRAGMA table_info(signals)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if "product_id" not in columns:
+            logger.info("Migrating signals table...")
+            # Rename old table
+            c.execute("ALTER TABLE signals RENAME TO signals_old")
+            # Create new table with correct schema
+            c.execute("""
+            CREATE TABLE signals (
+                id TEXT PRIMARY KEY,
+                product_id TEXT NOT NULL DEFAULT 'echotray',
+                domain TEXT NOT NULL,
+                company TEXT NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                url TEXT,
+                published_at TEXT NOT NULL,
+                magnitude INTEGER DEFAULT 0,
+                relevance REAL DEFAULT 0.5,
+                recency_days INTEGER DEFAULT 0,
+                score INTEGER DEFAULT 0,
+                icp_score INTEGER DEFAULT 0,
+                icp_explanation TEXT,
+                employees INTEGER,
+                contacted INTEGER DEFAULT 0,
+                contacted_at TEXT,
+                created_at INTEGER NOT NULL,
+                UNIQUE(product_id, domain, title),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """)
+            # Copy data
+            # Map old columns to new columns (handling potential differences)
+            old_cols = "id, domain, company, type, title, summary, url, published_at, magnitude, relevance, recency_days, score, icp_score, icp_explanation, employees, contacted, contacted_at, created_at"
+            c.execute(f"INSERT INTO signals ({old_cols}) SELECT {old_cols} FROM signals_old")
+            c.execute("DROP TABLE signals_old")
+        
+        # 3. Check if migration is needed for templates
+        cursor = c.execute("PRAGMA table_info(templates)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if "product_id" not in columns:
+            logger.info("Migrating templates table...")
+            c.execute("ALTER TABLE templates RENAME TO templates_old")
+            c.execute("""
+            CREATE TABLE templates (
+                id TEXT PRIMARY KEY,
+                product_id TEXT NOT NULL DEFAULT 'echotray',
+                name TEXT NOT NULL,
+                signal_type TEXT,
+                subject TEXT NOT NULL,
+                opening TEXT NOT NULL,
+                is_fallback INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                UNIQUE(product_id, name),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """)
+            old_cols = "id, name, signal_type, subject, opening, is_fallback, created_at"
+            c.execute(f"INSERT INTO templates ({old_cols}) SELECT {old_cols} FROM templates_old")
+            c.execute("DROP TABLE templates_old")
 
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
-            id TEXT PRIMARY KEY,
-            product_id TEXT NOT NULL DEFAULT 'echotray',
-            domain TEXT NOT NULL,
-            company TEXT NOT NULL,
-            type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            summary TEXT,
-            url TEXT,
-            published_at TEXT NOT NULL,
-            magnitude INTEGER DEFAULT 0,
-            relevance REAL DEFAULT 0.5,
-            recency_days INTEGER DEFAULT 0,
-            score INTEGER DEFAULT 0,
-            icp_score INTEGER DEFAULT 0,
-            icp_explanation TEXT,
-            employees INTEGER,
-            contacted INTEGER DEFAULT 0,
-            contacted_at TEXT,
-            created_at INTEGER NOT NULL,
-            UNIQUE(product_id, domain, title),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """)
+        # 4. Check if migration is needed for prospects
+        cursor = c.execute("PRAGMA table_info(prospects)")
+        columns = [row[1] for row in cursor.fetchall()]
         
-        # Add product_id to templates if not exists
-        try:
-            c.execute("ALTER TABLE templates ADD COLUMN product_id TEXT DEFAULT 'echotray'")
-        except sqlite3.OperationalError:
-            pass
+        if "product_id" not in columns:
+            logger.info("Migrating prospects table...")
+            c.execute("ALTER TABLE prospects RENAME TO prospects_old")
+            c.execute("""
+            CREATE TABLE prospects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id TEXT NOT NULL DEFAULT 'echotray',
+                domain TEXT NOT NULL,
+                company TEXT NOT NULL,
+                signal_type TEXT,
+                signal_title TEXT,
+                signal_summary TEXT,
+                url TEXT,
+                relevance REAL DEFAULT 0.5,
+                magnitude INTEGER DEFAULT 0,
+                fit_score INTEGER DEFAULT 0,
+                icp_explanation TEXT,
+                discovered_at TEXT NOT NULL,
+                status TEXT DEFAULT 'new',
+                notes TEXT,
+                UNIQUE(product_id, domain),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """)
+            old_cols = "id, domain, company, signal_type, signal_title, signal_summary, url, relevance, magnitude, fit_score, icp_explanation, discovered_at, status, notes"
+            c.execute(f"INSERT INTO prospects ({old_cols}) SELECT {old_cols} FROM prospects_old")
+            c.execute("DROP TABLE prospects_old")
 
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS templates (
-            id TEXT PRIMARY KEY,
-            product_id TEXT NOT NULL DEFAULT 'echotray',
-            name TEXT NOT NULL,
-            signal_type TEXT,
-            subject TEXT NOT NULL,
-            opening TEXT NOT NULL,
-            is_fallback INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            UNIQUE(product_id, name),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """)
+        # 5. Check if migration is needed for signal_pins
+        cursor = c.execute("PRAGMA table_info(signal_pins)")
+        columns = [row[1] for row in cursor.fetchall()]
         
-        c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_signals_domain_prod ON signals(product_id, domain)
-        """)
-        
-        c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_signals_score_prod ON signals(product_id, score DESC)
-        """)
-        
-        # Add product_id to signal_pins if not exists
-        try:
-            c.execute("ALTER TABLE signal_pins ADD COLUMN product_id TEXT DEFAULT 'echotray'")
-        except sqlite3.OperationalError:
-            pass
+        if "product_id" not in columns:
+            logger.info("Migrating signal_pins table...")
+            try:
+                c.execute("ALTER TABLE signal_pins RENAME TO signal_pins_old")
+                c.execute("""
+                CREATE TABLE signal_pins (
+                    product_id TEXT NOT NULL DEFAULT 'echotray',
+                    domain TEXT NOT NULL,
+                    signal_id TEXT NOT NULL,
+                    pinned_at INTEGER NOT NULL,
+                    pinned_by TEXT,
+                    PRIMARY KEY (product_id, domain),
+                    FOREIGN KEY (signal_id) REFERENCES signals(id),
+                    FOREIGN KEY (product_id) REFERENCES products(id)
+                )
+                """)
+                old_cols = "domain, signal_id, pinned_at, pinned_by"
+                c.execute(f"INSERT INTO signal_pins ({old_cols}) SELECT {old_cols} FROM signal_pins_old")
+                c.execute("DROP TABLE signal_pins_old")
+            except sqlite3.OperationalError:
+                # Table might not exist yet
+                pass
 
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS signal_pins (
-            product_id TEXT NOT NULL DEFAULT 'echotray',
-            domain TEXT NOT NULL,
-            signal_id TEXT NOT NULL,
-            pinned_at INTEGER NOT NULL,
-            pinned_by TEXT,
-            PRIMARY KEY (product_id, domain),
-            FOREIGN KEY (signal_id) REFERENCES signals(id),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """)
+        # 6. Check if migration is needed for signal_exclusions
+        cursor = c.execute("PRAGMA table_info(signal_exclusions)")
+        columns = [row[1] for row in cursor.fetchall()]
         
-        # Add product_id to signal_exclusions if not exists
-        try:
-            c.execute("ALTER TABLE signal_exclusions ADD COLUMN product_id TEXT DEFAULT 'echotray'")
-        except sqlite3.OperationalError:
-            pass
+        if "product_id" not in columns:
+            logger.info("Migrating signal_exclusions table...")
+            try:
+                c.execute("ALTER TABLE signal_exclusions RENAME TO signal_exclusions_old")
+                c.execute("""
+                CREATE TABLE signal_exclusions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id TEXT NOT NULL DEFAULT 'echotray',
+                    domain TEXT NOT NULL,
+                    signal_id TEXT,
+                    signal_type TEXT,
+                    excluded_at INTEGER NOT NULL,
+                    excluded_by TEXT,
+                    reason TEXT,
+                    UNIQUE(product_id, domain, signal_id),
+                    UNIQUE(product_id, domain, signal_type),
+                    FOREIGN KEY (product_id) REFERENCES products(id)
+                )
+                """)
+                old_cols = "id, domain, signal_id, signal_type, excluded_at, excluded_by, reason"
+                c.execute(f"INSERT INTO signal_exclusions ({old_cols}) SELECT {old_cols} FROM signal_exclusions_old")
+                c.execute("DROP TABLE signal_exclusions_old")
+            except sqlite3.OperationalError:
+                pass
 
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS signal_exclusions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id TEXT NOT NULL DEFAULT 'echotray',
-            domain TEXT NOT NULL,
-            signal_id TEXT,
-            signal_type TEXT,
-            excluded_at INTEGER NOT NULL,
-            excluded_by TEXT,
-            reason TEXT,
-            UNIQUE(product_id, domain, signal_id),
-            UNIQUE(product_id, domain, signal_type),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """)
+        # 7. Final Indices
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_domain_prod ON signals(product_id, domain)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_score_prod ON signals(product_id, score DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_prospects_status_prod ON prospects(product_id, status)")
         
-        # Add product_id to prospects if not exists
-        try:
-            c.execute("ALTER TABLE prospects ADD COLUMN product_id TEXT DEFAULT 'echotray'")
-        except sqlite3.OperationalError:
-            pass
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS prospects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id TEXT NOT NULL DEFAULT 'echotray',
-            domain TEXT NOT NULL,
-            company TEXT NOT NULL,
-            signal_type TEXT,
-            signal_title TEXT,
-            signal_summary TEXT,
-            url TEXT,
-            relevance REAL DEFAULT 0.5,
-            magnitude INTEGER DEFAULT 0,
-            fit_score INTEGER DEFAULT 0,
-            icp_explanation TEXT,
-            discovered_at TEXT NOT NULL,
-            status TEXT DEFAULT 'new',
-            notes TEXT,
-            UNIQUE(product_id, domain),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """)
-        
-        c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_prospects_status_prod ON prospects(product_id, status)
-        """)
+        c.commit()
         
         # Seed default EchoTray product if missing
         count = c.execute("SELECT COUNT(*) FROM products WHERE id = 'echotray'").fetchone()[0]
