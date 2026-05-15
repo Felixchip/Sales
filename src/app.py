@@ -42,6 +42,9 @@ from src.job_board_crawler import search_job_boards_tavily
 from src.product_launch_crawler import search_product_launches_tavily
 from src.icp_scoring import calculate_icp_fit_score
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Debug: List directories to find where index.html is
 logger.info(f"CWD: {os.getcwd()}")
 logger.info(f"App Dir: {os.path.dirname(os.path.abspath(__file__))}")
