@@ -2,7 +2,10 @@
 nixPkgs = ["python311", "nodejs_22"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt", "npm install --prefix frontend"]
+cmds = ["pip install -r requirements.txt", "cd frontend && npm install"]
+
+[phases.build]
+cmds = ["cd frontend && ./node_modules/.bin/vite build"]
 
 [start]
-cmd = "echo 'BUILDING FRONTEND...' && npm run build --prefix frontend && echo 'BUILD COMPLETE' && ls -R frontend/dist && gunicorn --bind 0.0.0.0:$PORT src.app:app"
+cmd = "gunicorn --bind 0.0.0.0:$PORT src.app:app"
