@@ -113,6 +113,7 @@ def generate_dynamic_personalization(signal: Dict, company: str, first_name: str
             subject=result['subject'],
             opening=result['opening'],
             signal_type=signal.get('type', 'press'),
+            product=product,
             cta_option=0
         )
         

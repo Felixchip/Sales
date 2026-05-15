@@ -140,7 +140,7 @@ export default function PersonalizationModal({ signal, onClose, onContacted }) {
               {personalization.bridge && (
                 <div className="p-4 bg-slate-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500">ECHOTRAY BRIDGE</span>
+                    <span className="text-xs font-semibold text-slate-500">{activeProduct?.name.toUpperCase()} BRIDGE</span>
                     <Button variant="ghost" size="sm" onClick={() => copyToClipboard(personalization.bridge)}>
                       Copy
                     </Button>
