@@ -42,27 +42,25 @@ from src.job_board_crawler import search_job_boards_tavily
 from src.product_launch_crawler import search_product_launches_tavily
 from src.icp_scoring import calculate_icp_fit_score
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Debug: List directories to find where index.html is
+logger.info(f"CWD: {os.getcwd()}")
+logger.info(f"App Dir: {os.path.dirname(os.path.abspath(__file__))}")
 
-# Find static folder
-possible_paths = [
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist'),
-    os.path.join(os.getcwd(), 'frontend', 'dist'),
-    '/app/frontend/dist'
-]
+def find_index_html(start_path):
+    for root, dirs, files in os.walk(start_path):
+        if 'index.html' in files:
+            # Check if it's in a 'dist' or 'frontend' folder to avoid picking up source templates
+            if 'dist' in root or 'frontend' in root:
+                return root
+    return None
 
-static_folder = None
-for path in possible_paths:
-    if os.path.exists(os.path.join(path, 'index.html')):
-        static_folder = path
-        break
+static_folder = find_index_html('/app') or find_index_html(os.getcwd())
 
 if not static_folder:
-    static_folder = possible_paths[0] # Fallback
+    logger.error("COULD NOT FIND INDEX.HTML ANYWHERE IN /APP")
+    static_folder = os.path.join(os.getcwd(), 'frontend', 'dist') # Default fallback
 
-logger.info(f"Final static folder path: {static_folder}")
-logger.info(f"Index.html exists: {os.path.exists(os.path.join(static_folder, 'index.html'))}")
+logger.info(f"Discovered static folder: {static_folder}")
 
 app = Flask(__name__, static_folder=static_folder, static_url_path='')
 CORS(app, supports_credentials=True)
