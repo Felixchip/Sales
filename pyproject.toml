@@ -16,4 +16,5 @@ dependencies = [
     "beautifulsoup4>=4.14.2",
     "lxml>=6.0.2",
     "gunicorn>=23.0.0",
+    "dnspython>=2.6.1",
 ]
