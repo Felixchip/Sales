@@ -45,9 +45,23 @@ from src.icp_scoring import calculate_icp_fit_score
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app_dir = os.path.dirname(os.path.abspath(__file__))
-static_folder = os.path.join(app_dir, '..', 'frontend', 'dist')
-logger.info(f"Static folder path: {static_folder}")
+# Find static folder
+possible_paths = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist'),
+    os.path.join(os.getcwd(), 'frontend', 'dist'),
+    '/app/frontend/dist'
+]
+
+static_folder = None
+for path in possible_paths:
+    if os.path.exists(os.path.join(path, 'index.html')):
+        static_folder = path
+        break
+
+if not static_folder:
+    static_folder = possible_paths[0] # Fallback
+
+logger.info(f"Final static folder path: {static_folder}")
 logger.info(f"Index.html exists: {os.path.exists(os.path.join(static_folder, 'index.html'))}")
 
 app = Flask(__name__, static_folder=static_folder, static_url_path='')
