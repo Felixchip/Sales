@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 
 app_dir = os.path.dirname(os.path.abspath(__file__))
 static_folder = os.path.join(app_dir, '..', 'frontend', 'dist')
+logger.info(f"Static folder path: {static_folder}")
+logger.info(f"Index.html exists: {os.path.exists(os.path.join(static_folder, 'index.html'))}")
 
 app = Flask(__name__, static_folder=static_folder, static_url_path='')
 CORS(app, supports_credentials=True)
