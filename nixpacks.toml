@@ -2,7 +2,12 @@
 nixPkgs = ["python311", "nodejs_22"]
 
 [phases.build]
-cmds = ["pip install .", "cd frontend && npm install && npm run build"]
+cmds = [
+    "pip install .",
+    "cd frontend && npm install",
+    "cd frontend && npm run build",
+    "if [ ! -d \"frontend/dist\" ]; then echo \"BUILD FAILED OR DIST MISSING\"; exit 1; fi"
+]
 
 [start]
 cmd = "gunicorn --bind 0.0.0.0:$PORT src.app:app"
