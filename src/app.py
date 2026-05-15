@@ -45,37 +45,8 @@ from src.icp_scoring import calculate_icp_fit_score
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Debug: List directories to find where index.html is
-logger.info(f"CWD: {os.getcwd()}")
-logger.info(f"App Dir: {os.path.dirname(os.path.abspath(__file__))}")
-
-def find_index_html_paths(start_path):
-    matches = []
-    for root, dirs, files in os.walk(start_path):
-        if 'index.html' in files:
-            matches.append(root)
-    return matches
-
-found_paths = find_index_html_paths('/app') + find_index_html_paths(os.getcwd())
-logger.info(f"All found index.html paths: {found_paths}")
-
-# Prioritize paths containing 'dist'
-static_folder = None
-for path in found_paths:
-    if 'dist' in path:
-        static_folder = path
-        break
-
-if not static_folder and found_paths:
-    # Fallback to any path that isn't the root or a known source folder if possible
-    static_folder = found_paths[0]
-
-if not static_folder:
-    logger.error("COULD NOT FIND INDEX.HTML ANYWHERE IN /APP")
-    static_folder = os.path.join(os.getcwd(), 'frontend', 'dist')
-
-logger.info(f"Discovered static folder: {static_folder}")
-
+# Serve frontend from dist
+static_folder = os.path.join(os.getcwd(), 'frontend', 'dist')
 app = Flask(__name__, static_folder=static_folder, static_url_path='')
 CORS(app, supports_credentials=True)
 
@@ -92,12 +63,13 @@ def get_product_id():
 
 @app.route('/')
 def index():
-    if app.static_folder and os.path.exists(os.path.join(app.static_folder, 'index.html')):
-        return send_from_directory(app.static_folder, 'index.html')
+    if os.path.exists(os.path.join(static_folder, 'index.html')):
+        return send_from_directory(static_folder, 'index.html')
     return jsonify({
         "status": "running",
         "service": "Verify & Personalize API",
-        "version": "1.0"
+        "version": "1.0",
+        "note": "Frontend dist/index.html not found. Build may be in progress."
     })
 
 # ============ PRODUCT MANAGEMENT ENDPOINTS ============
