@@ -9,9 +9,30 @@ DB_PATH = "personalize.db"
 
 def init_db():
     with sqlite3.connect(DB_PATH) as c:
+        # Products table
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            value_prop TEXT,
+            icp_config TEXT, -- JSON
+            prompts_config TEXT, -- JSON
+            from_email TEXT,
+            created_at INTEGER NOT NULL
+        )
+        """)
+
+        # Add product_id to signals if not exists
+        try:
+            c.execute("ALTER TABLE signals ADD COLUMN product_id TEXT DEFAULT 'echotray'")
+        except sqlite3.OperationalError:
+            pass # Column already exists
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL DEFAULT 'echotray',
             domain TEXT NOT NULL,
             company TEXT NOT NULL,
             type TEXT NOT NULL,
@@ -23,59 +44,98 @@ def init_db():
             relevance REAL DEFAULT 0.5,
             recency_days INTEGER DEFAULT 0,
             score INTEGER DEFAULT 0,
+            icp_score INTEGER DEFAULT 0,
+            icp_explanation TEXT,
+            employees INTEGER,
+            contacted INTEGER DEFAULT 0,
+            contacted_at TEXT,
             created_at INTEGER NOT NULL,
-            UNIQUE(domain, title)
+            UNIQUE(product_id, domain, title),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
         """)
         
+        # Add product_id to templates if not exists
+        try:
+            c.execute("ALTER TABLE templates ADD COLUMN product_id TEXT DEFAULT 'echotray'")
+        except sqlite3.OperationalError:
+            pass
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS templates (
             id TEXT PRIMARY KEY,
-            name TEXT UNIQUE NOT NULL,
+            product_id TEXT NOT NULL DEFAULT 'echotray',
+            name TEXT NOT NULL,
             signal_type TEXT,
             subject TEXT NOT NULL,
             opening TEXT NOT NULL,
             is_fallback INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            UNIQUE(product_id, name),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
         """)
         
         c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_signals_domain ON signals(domain)
+        CREATE INDEX IF NOT EXISTS idx_signals_domain_prod ON signals(product_id, domain)
         """)
         
         c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score DESC)
+        CREATE INDEX IF NOT EXISTS idx_signals_score_prod ON signals(product_id, score DESC)
         """)
         
+        # Add product_id to signal_pins if not exists
+        try:
+            c.execute("ALTER TABLE signal_pins ADD COLUMN product_id TEXT DEFAULT 'echotray'")
+        except sqlite3.OperationalError:
+            pass
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS signal_pins (
-            domain TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL DEFAULT 'echotray',
+            domain TEXT NOT NULL,
             signal_id TEXT NOT NULL,
             pinned_at INTEGER NOT NULL,
             pinned_by TEXT,
-            FOREIGN KEY (signal_id) REFERENCES signals(id)
+            PRIMARY KEY (product_id, domain),
+            FOREIGN KEY (signal_id) REFERENCES signals(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
         """)
         
+        # Add product_id to signal_exclusions if not exists
+        try:
+            c.execute("ALTER TABLE signal_exclusions ADD COLUMN product_id TEXT DEFAULT 'echotray'")
+        except sqlite3.OperationalError:
+            pass
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS signal_exclusions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id TEXT NOT NULL DEFAULT 'echotray',
             domain TEXT NOT NULL,
             signal_id TEXT,
             signal_type TEXT,
             excluded_at INTEGER NOT NULL,
             excluded_by TEXT,
             reason TEXT,
-            UNIQUE(domain, signal_id),
-            UNIQUE(domain, signal_type)
+            UNIQUE(product_id, domain, signal_id),
+            UNIQUE(product_id, domain, signal_type),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
         """)
         
+        # Add product_id to prospects if not exists
+        try:
+            c.execute("ALTER TABLE prospects ADD COLUMN product_id TEXT DEFAULT 'echotray'")
+        except sqlite3.OperationalError:
+            pass
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS prospects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            domain TEXT UNIQUE NOT NULL,
+            product_id TEXT NOT NULL DEFAULT 'echotray',
+            domain TEXT NOT NULL,
             company TEXT NOT NULL,
             signal_type TEXT,
             signal_title TEXT,
@@ -83,16 +143,28 @@ def init_db():
             url TEXT,
             relevance REAL DEFAULT 0.5,
             magnitude INTEGER DEFAULT 0,
+            fit_score INTEGER DEFAULT 0,
+            icp_explanation TEXT,
             discovered_at TEXT NOT NULL,
             status TEXT DEFAULT 'new',
-            notes TEXT
+            notes TEXT,
+            UNIQUE(product_id, domain),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
         """)
         
         c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_prospects_status ON prospects(status)
+        CREATE INDEX IF NOT EXISTS idx_prospects_status_prod ON prospects(product_id, status)
         """)
         
+        # Seed default EchoTray product if missing
+        count = c.execute("SELECT COUNT(*) FROM products WHERE id = 'echotray'").fetchone()[0]
+        if count == 0:
+            c.execute("""
+            INSERT INTO products (id, name, description, value_prop, from_email, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, ('echotray', 'EchoTray', 'The Outreach Stack', 'Clear handoffs, fast catch-ups, and tight recaps.', 'verify@echotray.ai', int(time.time())))
+
         c.commit()
 
 
@@ -125,7 +197,7 @@ def calculate_score(published_at: str, relevance: float, magnitude: int) -> int:
         return 0
 
 
-def save_signal(signal: Dict):
+def save_signal(signal: Dict, product_id: str = 'echotray'):
     """Save or update a signal"""
     with sqlite3.connect(DB_PATH) as c:
         pub_date = datetime.fromisoformat(signal['published_at'].replace('Z', '+00:00'))
@@ -139,11 +211,11 @@ def save_signal(signal: Dict):
         
         c.execute("""
             INSERT INTO signals (
-                id, domain, company, type, title, summary, url, 
+                id, product_id, domain, company, type, title, summary, url, 
                 published_at, magnitude, relevance, recency_days, score, 
                 icp_score, icp_explanation, employees, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(domain, title) DO UPDATE SET
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(product_id, domain, title) DO UPDATE SET
                 summary=excluded.summary,
                 url=excluded.url,
                 magnitude=excluded.magnitude,
@@ -155,6 +227,7 @@ def save_signal(signal: Dict):
                 employees=excluded.employees
         """, (
             signal['id'],
+            product_id,
             signal['domain'],
             signal['company'],
             signal['type'],
@@ -174,16 +247,16 @@ def save_signal(signal: Dict):
         c.commit()
 
 
-def get_top_signals(domain: str, limit: int = 3, max_age_days: int = 45) -> List[Dict]:
+def get_top_signals(domain: str, product_id: str = 'echotray', limit: int = 3, max_age_days: int = 45) -> List[Dict]:
     """Get top N signals for a domain, ordered by score, within freshness window"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         rows = c.execute("""
             SELECT * FROM signals 
-            WHERE domain = ? AND recency_days <= ?
+            WHERE product_id = ? AND domain = ? AND recency_days <= ?
             ORDER BY score DESC 
             LIMIT ?
-        """, (domain, max_age_days, limit)).fetchall()
+        """, (product_id, domain, max_age_days, limit)).fetchall()
         
         return [dict(row) for row in rows]
 
@@ -196,15 +269,16 @@ def get_signal_by_id(signal_id: str) -> Optional[Dict]:
         return dict(row) if row else None
 
 
-def get_all_signals(limit: int = 100) -> List[Dict]:
+def get_all_signals(product_id: str = 'echotray', limit: int = 100) -> List[Dict]:
     """Get all signals ordered by score"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         rows = c.execute("""
             SELECT * FROM signals 
+            WHERE product_id = ?
             ORDER BY score DESC, created_at DESC 
             LIMIT ?
-        """, (limit,)).fetchall()
+        """, (product_id, limit)).fetchall()
         
         return [dict(row) for row in rows]
 
@@ -235,20 +309,21 @@ def purge_old_signals(days: int = 90):
         c.commit()
 
 
-def save_template(template: Dict):
+def save_template(template: Dict, product_id: str = 'echotray'):
     """Save or update a template"""
     with sqlite3.connect(DB_PATH) as c:
         c.execute("""
             INSERT INTO templates (
-                id, name, signal_type, subject, opening, is_fallback, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
+                id, product_id, name, signal_type, subject, opening, is_fallback, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(product_id, name) DO UPDATE SET
                 signal_type=excluded.signal_type,
                 subject=excluded.subject,
                 opening=excluded.opening,
                 is_fallback=excluded.is_fallback
         """, (
             template['id'],
+            product_id,
             template['name'],
             template.get('signal_type', ''),
             template['subject'],
@@ -259,60 +334,60 @@ def save_template(template: Dict):
         c.commit()
 
 
-def get_template(name: str) -> Optional[Dict]:
+def get_template(name: str, product_id: str = 'echotray') -> Optional[Dict]:
     """Get template by name"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
-        row = c.execute("SELECT * FROM templates WHERE name = ?", (name,)).fetchone()
+        row = c.execute("SELECT * FROM templates WHERE product_id = ? AND name = ?", (product_id, name)).fetchone()
         return dict(row) if row else None
 
 
-def get_template_for_signal(signal_type: str) -> Optional[Dict]:
+def get_template_for_signal(signal_type: str, product_id: str = 'echotray') -> Optional[Dict]:
     """Get best template for signal type"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         row = c.execute("""
             SELECT * FROM templates 
-            WHERE signal_type = ? 
+            WHERE product_id = ? AND signal_type = ? 
             ORDER BY created_at DESC 
             LIMIT 1
-        """, (signal_type,)).fetchone()
+        """, (product_id, signal_type)).fetchone()
         return dict(row) if row else None
 
 
-def get_fallback_template() -> Optional[Dict]:
+def get_fallback_template(product_id: str = 'echotray') -> Optional[Dict]:
     """Get fallback template"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         row = c.execute("""
             SELECT * FROM templates 
-            WHERE is_fallback = 1 
+            WHERE product_id = ? AND is_fallback = 1 
             ORDER BY created_at DESC 
             LIMIT 1
-        """, ()).fetchone()
+        """, (product_id,)).fetchone()
         return dict(row) if row else None
 
 
-def get_all_templates() -> List[Dict]:
+def get_all_templates(product_id: str = 'echotray') -> List[Dict]:
     """Get all templates"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
-        rows = c.execute("SELECT * FROM templates ORDER BY name").fetchall()
+        rows = c.execute("SELECT * FROM templates WHERE product_id = ? ORDER BY name", (product_id,)).fetchall()
         return [dict(row) for row in rows]
 
 
-def pin_signal(domain: str, signal_id: str, pinned_by: str = "user") -> bool:
+def pin_signal(domain: str, signal_id: str, product_id: str = 'echotray', pinned_by: str = "user") -> bool:
     """Pin a signal for a domain (overrides autonomous selection)"""
     with sqlite3.connect(DB_PATH) as c:
         try:
             c.execute("""
-                INSERT INTO signal_pins (domain, signal_id, pinned_at, pinned_by)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
+                INSERT INTO signal_pins (product_id, domain, signal_id, pinned_at, pinned_by)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(product_id, domain) DO UPDATE SET
                     signal_id=excluded.signal_id,
                     pinned_at=excluded.pinned_at,
                     pinned_by=excluded.pinned_by
-            """, (domain, signal_id, int(time.time()), pinned_by))
+            """, (product_id, domain, signal_id, int(time.time()), pinned_by))
             c.commit()
             return True
         except Exception as e:
@@ -320,24 +395,24 @@ def pin_signal(domain: str, signal_id: str, pinned_by: str = "user") -> bool:
             return False
 
 
-def unpin_signal(domain: str) -> bool:
+def unpin_signal(domain: str, product_id: str = 'echotray') -> bool:
     """Remove pinned signal for domain (restore autonomous mode)"""
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("DELETE FROM signal_pins WHERE domain = ?", (domain,))
+        c.execute("DELETE FROM signal_pins WHERE product_id = ? AND domain = ?", (product_id, domain))
         c.commit()
         return True
 
 
-def get_pinned_signal(domain: str) -> Optional[str]:
+def get_pinned_signal(domain: str, product_id: str = 'echotray') -> Optional[str]:
     """Get pinned signal ID for domain"""
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("""
-            SELECT signal_id FROM signal_pins WHERE domain = ?
-        """, (domain,)).fetchone()
+            SELECT signal_id FROM signal_pins WHERE product_id = ? AND domain = ?
+        """, (product_id, domain)).fetchone()
         return row[0] if row else None
 
 
-def exclude_signal(domain: str, signal_id: Optional[str] = None, signal_type: Optional[str] = None, 
+def exclude_signal(domain: str, product_id: str = 'echotray', signal_id: Optional[str] = None, signal_type: Optional[str] = None, 
                    reason: str = "", excluded_by: str = "user") -> bool:
     """Exclude a specific signal or signal type for a domain"""
     if not signal_id and not signal_type:
@@ -347,9 +422,9 @@ def exclude_signal(domain: str, signal_id: Optional[str] = None, signal_type: Op
         try:
             c.execute("""
                 INSERT INTO signal_exclusions 
-                (domain, signal_id, signal_type, excluded_at, excluded_by, reason)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (domain, signal_id, signal_type, int(time.time()), excluded_by, reason))
+                (product_id, domain, signal_id, signal_type, excluded_at, excluded_by, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (product_id, domain, signal_id, signal_type, int(time.time()), excluded_by, reason))
             c.commit()
             return True
         except Exception as e:
@@ -357,40 +432,40 @@ def exclude_signal(domain: str, signal_id: Optional[str] = None, signal_type: Op
             return False
 
 
-def remove_exclusion(domain: str, signal_id: Optional[str] = None, signal_type: Optional[str] = None) -> bool:
+def remove_exclusion(domain: str, product_id: str = 'echotray', signal_id: Optional[str] = None, signal_type: Optional[str] = None) -> bool:
     """Remove signal or type exclusion"""
     with sqlite3.connect(DB_PATH) as c:
         if signal_id:
-            c.execute("DELETE FROM signal_exclusions WHERE domain = ? AND signal_id = ?", 
-                     (domain, signal_id))
+            c.execute("DELETE FROM signal_exclusions WHERE product_id = ? AND domain = ? AND signal_id = ?", 
+                     (product_id, domain, signal_id))
         elif signal_type:
-            c.execute("DELETE FROM signal_exclusions WHERE domain = ? AND signal_type = ?", 
-                     (domain, signal_type))
+            c.execute("DELETE FROM signal_exclusions WHERE product_id = ? AND domain = ? AND signal_type = ?", 
+                     (product_id, domain, signal_type))
         c.commit()
         return True
 
 
-def get_exclusions(domain: str) -> List[Dict]:
+def get_exclusions(domain: str, product_id: str = 'echotray') -> List[Dict]:
     """Get all exclusions for a domain"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         rows = c.execute("""
-            SELECT * FROM signal_exclusions WHERE domain = ?
-        """, (domain,)).fetchall()
+            SELECT * FROM signal_exclusions WHERE product_id = ? AND domain = ?
+        """, (product_id, domain)).fetchall()
         return [dict(row) for row in rows]
 
 
-def save_prospect(prospect: Dict) -> bool:
+def save_prospect(prospect: Dict, product_id: str = 'echotray') -> bool:
     """Save discovered prospect to database"""
     with sqlite3.connect(DB_PATH) as c:
         try:
             c.execute("""
                 INSERT INTO prospects (
-                    domain, company, signal_type, signal_title, signal_summary,
+                    product_id, domain, company, signal_type, signal_title, signal_summary,
                     url, relevance, magnitude, fit_score, icp_explanation, 
                     discovered_at, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(product_id, domain) DO UPDATE SET
                     signal_type=excluded.signal_type,
                     signal_title=excluded.signal_title,
                     signal_summary=excluded.signal_summary,
@@ -400,6 +475,7 @@ def save_prospect(prospect: Dict) -> bool:
                     fit_score=excluded.fit_score,
                     icp_explanation=excluded.icp_explanation
             """, (
+                product_id,
                 prospect['domain'],
                 prospect['company'],
                 prospect.get('signal_type', ''),
@@ -420,33 +496,112 @@ def save_prospect(prospect: Dict) -> bool:
             return False
 
 
-def get_prospects(status: Optional[str] = None, limit: int = 100) -> List[Dict]:
+def get_prospects(product_id: str = 'echotray', status: Optional[str] = None, limit: int = 100) -> List[Dict]:
     """Get prospects, optionally filtered by status"""
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         if status:
             rows = c.execute("""
-                SELECT * FROM prospects WHERE status = ? 
+                SELECT * FROM prospects WHERE product_id = ? AND status = ? 
                 ORDER BY discovered_at DESC LIMIT ?
-            """, (status, limit)).fetchall()
+            """, (product_id, status, limit)).fetchall()
         else:
             rows = c.execute("""
                 SELECT * FROM prospects 
+                WHERE product_id = ?
                 ORDER BY discovered_at DESC LIMIT ?
-            """, (limit,)).fetchall()
+            """, (product_id, limit)).fetchall()
         return [dict(row) for row in rows]
 
 
-def update_prospect_status(domain: str, status: str, notes: Optional[str] = None) -> bool:
+def update_prospect_status(domain: str, status: str, product_id: str = 'echotray', notes: Optional[str] = None) -> bool:
     """Update prospect status (new, contacted, qualified, disqualified)"""
     with sqlite3.connect(DB_PATH) as c:
         if notes:
             c.execute("""
-                UPDATE prospects SET status = ?, notes = ? WHERE domain = ?
-            """, (status, notes, domain))
+                UPDATE prospects SET status = ?, notes = ? WHERE product_id = ? AND domain = ?
+            """, (status, notes, product_id, domain))
         else:
             c.execute("""
-                UPDATE prospects SET status = ? WHERE domain = ?
-            """, (status, domain))
+                UPDATE prospects SET status = ? WHERE product_id = ? AND domain = ?
+            """, (status, product_id, domain))
         c.commit()
         return True
+
+
+# ============ PRODUCT MANAGEMENT ============
+
+def save_product(product: Dict) -> bool:
+    """Save or update a product"""
+    with sqlite3.connect(DB_PATH) as c:
+        try:
+            c.execute("""
+                INSERT INTO products (
+                    id, name, description, value_prop, icp_config, prompts_config, from_email, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    description=excluded.description,
+                    value_prop=excluded.value_prop,
+                    icp_config=excluded.icp_config,
+                    prompts_config=excluded.prompts_config,
+                    from_email=excluded.from_email
+            """, (
+                product['id'],
+                product['name'],
+                product.get('description', ''),
+                product.get('value_prop', ''),
+                json.dumps(product.get('icp_config', {})),
+                json.dumps(product.get('prompts_config', {})),
+                product.get('from_email', ''),
+                int(time.time())
+            ))
+            c.commit()
+            return True
+        except Exception as e:
+            print(f"Save product failed: {e}")
+            return False
+
+def get_product(product_id: str) -> Optional[Dict]:
+    """Get product by ID"""
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        row = c.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        res['icp_config'] = json.loads(res.get('icp_config', '{}') or '{}')
+        res['prompts_config'] = json.loads(res.get('prompts_config', '{}') or '{}')
+        return res
+
+def get_all_products() -> List[Dict]:
+    """Get all products"""
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute("SELECT * FROM products ORDER BY name").fetchall()
+        res_list = []
+        for row in rows:
+            res = dict(row)
+            res['icp_config'] = json.loads(res.get('icp_config', '{}') or '{}')
+            res['prompts_config'] = json.loads(res.get('prompts_config', '{}') or '{}')
+            res_list.append(res)
+        return res_list
+
+def delete_product(product_id: str) -> bool:
+    """Delete product and all its data"""
+    if product_id == 'echotray':
+        return False # Protect default product
+    with sqlite3.connect(DB_PATH) as c:
+        try:
+            # Foreign keys should handle cleanup if enabled, but let's be explicit
+            c.execute("DELETE FROM signals WHERE product_id = ?", (product_id,))
+            c.execute("DELETE FROM templates WHERE product_id = ?", (product_id,))
+            c.execute("DELETE FROM signal_pins WHERE product_id = ?", (product_id,))
+            c.execute("DELETE FROM signal_exclusions WHERE product_id = ?", (product_id,))
+            c.execute("DELETE FROM prospects WHERE product_id = ?", (product_id,))
+            c.execute("DELETE FROM products WHERE id = ?", (product_id,))
+            c.commit()
+            return True
+        except Exception as e:
+            print(f"Delete product failed: {e}")
+            return False

@@ -1,21 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Button from './Button';
 import Badge from './Badge';
 import { useToast } from './ToastContainer';
+import { useProduct } from '../contexts/ProductContext';
 import { api } from '../api';
 
 export default function PersonalizationModal({ signal, onClose, onContacted }) {
   const toast = useToast();
+  const { activeProduct } = useProduct();
   const [generating, setGenerating] = useState(false);
   const [personalization, setPersonalization] = useState(null);
   const [marking, setMarking] = useState(false);
 
   const generatePersonalization = async () => {
+    if (!activeProduct) return;
     setGenerating(true);
     try {
       // Use the SPECIFIC signal that was clicked (pinned mode)
       const email = `contact@${signal.domain}`;
-      const data = await api.personalizeFromEmail(email, 'there', signal.id);
+      const data = await api.personalizeFromEmail(email, activeProduct.id, 'there', signal.id);
       setPersonalization(data);
       toast.success('Personalization generated!');
     } catch (err) {

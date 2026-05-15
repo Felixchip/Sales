@@ -10,6 +10,9 @@ from datetime import datetime, timezone
 # Project specific imports
 from src.verify import verify_email
 from src.verify_storage import init_db as init_verify_db, save_result, get_result, get_all_results
+# Project specific imports
+from src.verify import verify_email
+from src.verify_storage import init_db as init_verify_db, save_result, get_result, get_all_results
 from src.personalize_db import (
     init_db as init_personalize_db,
     save_signal,
@@ -25,7 +28,11 @@ from src.personalize_db import (
     remove_exclusion,
     get_prospects,
     update_prospect_status,
-    save_prospect
+    save_prospect,
+    save_product,
+    get_product,
+    get_all_products,
+    delete_product
 )
 from src.personalize_engine import personalize_email, validate_output
 from src.default_templates import load_default_templates
@@ -48,6 +55,10 @@ load_default_templates()
 
 PASS_THRESHOLD = int(os.getenv("VERIFIER_PASS_THRESHOLD", "75"))
 
+def get_product_id():
+    """Helper to extract product_id from headers or args"""
+    return request.headers.get('X-Product-Id', request.args.get('product_id', 'echotray'))
+
 @app.route('/')
 def index():
     if app.static_folder and os.path.exists(os.path.join(app.static_folder, 'index.html')):
@@ -58,13 +69,59 @@ def index():
         "version": "1.0"
     })
 
-@app.route('/<path:path>')
-def serve_static(path):
-    if app.static_folder and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    if app.static_folder and os.path.exists(os.path.join(app.static_folder, 'index.html')):
-        return send_from_directory(app.static_folder, 'index.html')
-    return jsonify({"error": "Not found"}), 404
+# ============ PRODUCT MANAGEMENT ENDPOINTS ============
+
+@app.route('/api/products', methods=['GET'])
+def list_products():
+    try:
+        products = get_all_products()
+        return jsonify({"products": products, "count": len(products)})
+    except Exception as e:
+        logger.error(f"List products failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/products', methods=['POST'])
+def create_product_endpoint():
+    try:
+        data = request.json
+        if not data.get('name'):
+            return jsonify({"error": "name is required"}), 400
+        
+        product = {
+            "id": data.get('id', str(uuid.uuid4())[:8]),
+            "name": data['name'],
+            "description": data.get('description', ''),
+            "value_prop": data.get('value_prop', ''),
+            "from_email": data.get('from_email', ''),
+            "icp_config": data.get('icp_config', {}),
+            "prompts_config": data.get('prompts_config', {})
+        }
+        save_product(product)
+        return jsonify({"success": True, "product": product})
+    except Exception as e:
+        logger.error(f"Create product failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/products/<id>', methods=['GET'])
+def get_product_endpoint(id):
+    try:
+        product = get_product(id)
+        if not product:
+            return jsonify({"error": "Product not found"}), 404
+        return jsonify(product)
+    except Exception as e:
+        logger.error(f"Get product failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/products/<id>', methods=['DELETE'])
+def delete_product_endpoint(id):
+    try:
+        success = delete_product(id)
+        return jsonify({"success": success})
+    except Exception as e:
+        logger.error(f"Delete product failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 # ============ EMAIL VERIFICATION ENDPOINTS ============
 
@@ -151,54 +208,18 @@ def verify_history():
         logger.error(f"History fetch failed: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/verify/save', methods=['POST'])
-def save_verified_email():
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        score = data.get('score')
-        name = data.get('name')
-        if not email or score is None:
-            return jsonify({"error": "Email and score required"}), 400
-        from src.verify_storage import save_email
-        save_email(email, score, name)
-        return jsonify({"success": True, "email": email})
-    except Exception as e:
-        logger.error(f"Save email failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/verify/saved', methods=['GET'])
-def get_saved_emails_endpoint():
-    try:
-        limit = request.args.get('limit', 1000, type=int)
-        from src.verify_storage import get_saved_emails
-        emails = get_saved_emails(limit)
-        return jsonify({"results": emails, "count": len(emails)})
-    except Exception as e:
-        logger.error(f"Get saved emails failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/verify/saved/<email>', methods=['DELETE'])
-def delete_saved_email_endpoint(email: str):
-    try:
-        from src.verify_storage import delete_saved_email
-        delete_saved_email(email)
-        return jsonify({"success": True})
-    except Exception as e:
-        logger.error(f"Delete saved email failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
 # ============ PERSONALIZATION ENDPOINTS ============
 
 @app.route('/api/signals/ingest', methods=['POST'])
 def ingest_signals():
     try:
         data = request.json
+        product_id = get_product_id()
         signals = data.get('signals', [])
         if not signals:
             return jsonify({"error": "No signals provided"}), 400
         for signal in signals:
-            save_signal(signal)
+            save_signal(signal, product_id)
         return jsonify({"success": True, "count": len(signals)})
     except Exception as e:
         logger.error(f"Signal ingestion failed: {e}")
@@ -207,8 +228,9 @@ def ingest_signals():
 @app.route('/api/signals/<domain>', methods=['GET'])
 def get_domain_signals(domain: str):
     try:
+        product_id = get_product_id()
         limit = request.args.get('limit', 3, type=int)
-        signals = get_top_signals(domain, limit)
+        signals = get_top_signals(domain, product_id, limit)
         return jsonify({"signals": signals, "count": len(signals)})
     except Exception as e:
         logger.error(f"Get signals failed: {e}")
@@ -217,8 +239,9 @@ def get_domain_signals(domain: str):
 @app.route('/api/signals', methods=['GET'])
 def list_all_signals():
     try:
+        product_id = get_product_id()
         limit = request.args.get('limit', 100, type=int)
-        signals = get_all_signals(limit)
+        signals = get_all_signals(product_id, limit)
         return jsonify({"signals": signals, "count": len(signals)})
     except Exception as e:
         logger.error(f"List signals failed: {e}")
@@ -228,14 +251,17 @@ def list_all_signals():
 def render_personalization():
     try:
         data = request.json
+        product_id = get_product_id()
         domain = data.get('domain')
         company = data.get('company')
         first_name = data.get('first_name')
         role = data.get('role')
         if not all([domain, company, first_name]):
             return jsonify({"error": "domain, company, and first_name required"}), 400
-        result = personalize_email(domain, company, first_name, role)
-        validation = validate_output(result['subject'], result['opening'])
+        
+        product = get_product(product_id)
+        result = personalize_email(domain, company, first_name, product_id, role)
+        validation = validate_output(result['subject'], result['opening'], product)
         result['validation'] = validation
         return jsonify(result)
     except Exception as e:
@@ -245,7 +271,8 @@ def render_personalization():
 @app.route('/api/templates', methods=['GET'])
 def list_templates():
     try:
-        templates = get_all_templates()
+        product_id = get_product_id()
+        templates = get_all_templates(product_id)
         return jsonify({"templates": templates, "count": len(templates)})
     except Exception as e:
         logger.error(f"List templates failed: {e}")
@@ -255,6 +282,7 @@ def list_templates():
 def create_template():
     try:
         data = request.json
+        product_id = get_product_id()
         template = {
             "id": str(uuid.uuid4()),
             "name": data.get('name'),
@@ -265,68 +293,45 @@ def create_template():
         }
         if not all([template['name'], template['subject'], template['opening']]):
             return jsonify({"error": "name, subject, and opening required"}), 400
-        save_template_db(template)
+        save_template_db(template, product_id)
         return jsonify({"success": True, "template": template})
     except Exception as e:
         logger.error(f"Create template failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/signals/purge', methods=['POST'])
-def purge_signals():
-    try:
-        days = request.json.get('days', 90)
-        purge_old_signals(days)
-        return jsonify({"success": True, "message": f"Purged signals older than {days} days"})
-    except Exception as e:
-        logger.error(f"Purge failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/signals/<signal_id>/contact', methods=['POST'])
-def mark_signal_contacted(signal_id):
-    try:
-        conn = sqlite3.connect('personalize.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE signals 
-            SET contacted = 1, contacted_at = ?
-            WHERE id = ?
-        ''', (datetime.now().isoformat(), signal_id))
-        conn.commit()
-        if cursor.rowcount == 0:
-            conn.close()
-            return jsonify({"error": "Signal not found"}), 404
-        conn.close()
-        return jsonify({"success": True})
-    except Exception as e:
-        logger.error(f"Mark contacted failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/personalize/from-email', methods=['POST'])
 def personalize_from_email():
     try:
         data = request.json
+        product_id = get_product_id()
         email_or_domain = data.get('email')
         name = data.get('name', '')
         auto_crawl = data.get('auto_crawl', True)
         pinned_signal_id = data.get('pinned_signal_id')
+        
         if not email_or_domain:
             return jsonify({"error": "email or domain required"}), 400
+        
         if '@' in email_or_domain:
             domain = email_or_domain.split('@')[-1]
             first_name = name.split()[0] if name else email_or_domain.split('@')[0]
         else:
             domain = email_or_domain
             first_name = name.split()[0] if name else 'there'
+            
         company = domain.replace('.com', '').replace('.io', '').replace('.ai', '').replace('.app', '').title()
-        existing_signals = get_top_signals(domain, limit=1, max_age_days=45)
+        
+        existing_signals = get_top_signals(domain, product_id, limit=1, max_age_days=45)
         crawled = False
+        
         if auto_crawl and not existing_signals and not pinned_signal_id:
             new_signals = search_company_signals(domain, company)
             if new_signals:
                 for signal in new_signals:
-                    save_signal(signal)
+                    save_signal(signal, product_id)
                 crawled = True
-        result = personalize_email(domain, company, first_name, role=None, pinned_signal_id=pinned_signal_id)
+                
+        result = personalize_email(domain, company, first_name, product_id, role=None, pinned_signal_id=pinned_signal_id)
         result['email'] = email_or_domain
         result['domain'] = domain
         result['auto_crawled'] = crawled
@@ -338,9 +343,10 @@ def personalize_from_email():
 @app.route('/api/prospects', methods=['GET'])
 def get_prospects_endpoint():
     try:
+        product_id = get_product_id()
         status = request.args.get('status')
         limit = request.args.get('limit', 100, type=int)
-        prospects = get_prospects(status, limit)
+        prospects = get_prospects(product_id, status, limit)
         return jsonify({"prospects": prospects, "count": len(prospects)})
     except Exception as e:
         logger.error(f"Get prospects failed: {e}")
@@ -349,12 +355,13 @@ def get_prospects_endpoint():
 @app.route('/api/prospects/<domain>', methods=['PATCH'])
 def update_prospect_endpoint(domain: str):
     try:
+        product_id = get_product_id()
         data = request.json
         status = data.get('status')
         notes = data.get('notes')
         if not status:
             return jsonify({"error": "status required"}), 400
-        success = update_prospect_status(domain, status, notes)
+        success = update_prospect_status(domain, status, product_id, notes)
         return jsonify({"success": success})
     except Exception as e:
         logger.error(f"Update prospect failed: {e}")
@@ -363,9 +370,13 @@ def update_prospect_endpoint(domain: str):
 @app.route('/api/prospects/discover', methods=['POST'])
 def discover_prospects_endpoint():
     try:
-        prospects = discover_new_prospects()
+        product_id = get_product_id()
+        product = get_product(product_id)
+        icp_config = product.get('icp_config') if product else None
+        
+        prospects = discover_new_prospects(icp_config=icp_config)
         for prospect in prospects:
-            save_prospect(prospect)
+            save_prospect(prospect, product_id)
         return jsonify({"success": True, "discovered": len(prospects)})
     except Exception as e:
         logger.error(f"Prospect discovery failed: {e}")
@@ -374,14 +385,23 @@ def discover_prospects_endpoint():
 @app.route('/api/signals/press-releases', methods=['POST'])
 def collect_press_release_signals_endpoint():
     try:
+        product_id = get_product_id()
+        product = get_product(product_id)
+        icp_config = product.get('icp_config') if product else None
+        
         data = request.json or {}
         keywords = data.get('keywords', ['SaaS funding', 'B2B product launch'])
         max_results = data.get('max_results', 10)
         signals = search_press_releases_tavily(keywords=keywords, max_results=max_results)
+        
         for signal in signals:
-            icp_result = calculate_icp_fit_score(signal.get('title', ''), signal.get('summary', ''))
+            icp_result = calculate_icp_fit_score(
+                signal.get('title', ''), 
+                signal.get('summary', ''),
+                icp_config=icp_config
+            )
             signal['icp_score'] = icp_result['total_score']
-            save_signal(signal)
+            save_signal(signal, product_id)
         return jsonify({"success": True, "collected": len(signals)})
     except Exception as e:
         logger.error(f"Press release collection failed: {e}")
@@ -390,15 +410,24 @@ def collect_press_release_signals_endpoint():
 @app.route('/api/signals/job-boards', methods=['POST'])
 def collect_job_board_signals_endpoint():
     try:
+        product_id = get_product_id()
+        product = get_product(product_id)
+        icp_config = product.get('icp_config') if product else None
+        
         data = request.json or {}
         keywords = data.get('keywords', ['SaaS remote hiring'])
         max_results = data.get('max_results', 10)
         signals = search_job_boards_tavily(keywords=keywords, max_results=max_results)
+        
         for signal in signals:
-            icp_result = calculate_icp_fit_score(signal.get('title', ''), signal.get('summary', ''))
+            icp_result = calculate_icp_fit_score(
+                signal.get('title', ''), 
+                signal.get('summary', ''),
+                icp_config=icp_config
+            )
             signal['icp_score'] = icp_result['total_score']
             signal_copy = {k: v for k, v in signal.items() if k != 'metadata'}
-            save_signal(signal_copy)
+            save_signal(signal_copy, product_id)
         return jsonify({"success": True, "collected": len(signals)})
     except Exception as e:
         logger.error(f"Job board collection failed: {e}")
@@ -407,19 +436,31 @@ def collect_job_board_signals_endpoint():
 @app.route('/api/signals/product-launches', methods=['POST'])
 def collect_product_launch_signals_endpoint():
     try:
+        product_id = get_product_id()
+        product = get_product(product_id)
+        icp_config = product.get('icp_config') if product else None
+        
         data = request.json or {}
         keywords = data.get('keywords', ['SaaS product launch'])
         max_results = data.get('max_results', 10)
         signals = search_product_launches_tavily(keywords=keywords, max_results=max_results)
+        
         for signal in signals:
-            icp_result = calculate_icp_fit_score(signal.get('title', ''), signal.get('summary', ''))
+            icp_result = calculate_icp_fit_score(
+                signal.get('title', ''), 
+                signal.get('summary', ''),
+                icp_config=icp_config
+            )
             signal['icp_score'] = icp_result['total_score']
             signal_copy = {k: v for k, v in signal.items() if k != 'metadata'}
-            save_signal(signal_copy)
+            save_signal(signal_copy, product_id)
         return jsonify({"success": True, "collected": len(signals)})
     except Exception as e:
         logger.error(f"Product launch collection failed: {e}")
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000, debug=True)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

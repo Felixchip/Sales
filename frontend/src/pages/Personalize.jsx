@@ -5,10 +5,12 @@ import Table from '../components/Table';
 import Badge from '../components/Badge';
 import PersonalizationModal from '../components/PersonalizationModal';
 import { useToast } from '../components/ToastContainer';
+import { useProduct } from '../contexts/ProductContext';
 import { api } from '../api';
 
 export default function Personalize() {
   const toast = useToast();
+  const { activeProduct } = useProduct();
   const [activeTab, setActiveTab] = useState('signals');
   const [signals, setSignals] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -21,20 +23,23 @@ export default function Personalize() {
   const [showManualModal, setShowManualModal] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, [activeTab]);
+    if (activeProduct) {
+      loadData();
+    }
+  }, [activeTab, activeProduct]);
 
   const loadData = async () => {
+    if (!activeProduct) return;
     setLoading(true);
     try {
       if (activeTab === 'signals') {
-        const data = await api.getAllSignals(50);
+        const data = await api.getAllSignals(activeProduct.id, 50);
         setSignals(data.signals || []);
       } else if (activeTab === 'templates') {
-        const data = await api.getTemplates();
+        const data = await api.getTemplates(activeProduct.id);
         setTemplates(data.templates || []);
       } else if (activeTab === 'contacted') {
-        const data = await api.getContactedSignals(100);
+        const data = await api.getContactedSignals(activeProduct.id, 100);
         setContactedSignals(data.signals || []);
       }
     } catch (err) {
@@ -64,11 +69,16 @@ export default function Personalize() {
       return;
     }
 
+    if (!activeProduct) {
+      toast.error('No active product selected');
+      return;
+    }
+
     setGenerating(true);
     setManualResult(null);
 
     try {
-      const result = await api.personalizeFromEmail(email);
+      const result = await api.personalizeFromEmail(email, activeProduct.id);
       setManualResult(result);
       setShowManualModal(true);
       toast.success('Personalization generated!');

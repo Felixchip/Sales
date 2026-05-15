@@ -6,10 +6,12 @@ import Badge from '../components/Badge';
 import BulkResultsModal from '../components/BulkResultsModal';
 import PersonalizationResultsModal from '../components/PersonalizationResultsModal';
 import { useToast } from '../components/ToastContainer';
+import { useProduct } from '../contexts/ProductContext';
 import { api } from '../api';
 
 export default function Verify() {
   const toast = useToast();
+  const { activeProduct } = useProduct();
   const [email, setEmail] = useState('');
   const [bulkEmails, setBulkEmails] = useState('');
   const [csvFile, setCsvFile] = useState(null);
@@ -160,9 +162,13 @@ export default function Verify() {
   };
 
   const generatePersonalization = async (email, name) => {
+    if (!activeProduct) {
+      toast.error('No active product selected');
+      return;
+    }
     setPersonalizing(true);
     try {
-      const data = await api.personalizeFromEmail(email, name);
+      const data = await api.personalizeFromEmail(email, activeProduct.id, name);
       setPersonalizationResult(data);
       setShowPersonalizationModal(true);
       toast.success('Personalization generated!');
@@ -187,7 +193,7 @@ export default function Verify() {
     try {
       for (const email of savedEmails) {
         try {
-          const data = await api.personalizeFromEmail(email.email, email.name);
+          const data = await api.personalizeFromEmail(email.email, activeProduct.id, email.name);
           results.push({ ...data, email: email.email, name: email.name });
           successCount++;
         } catch (err) {

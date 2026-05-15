@@ -118,7 +118,7 @@ def search_company_signals(domain: str, company: str) -> List[Dict]:
     return all_signals
 
 
-def discover_new_prospects() -> List[Dict]:
+def discover_new_prospects(icp_config: Optional[Dict] = None) -> List[Dict]:
     """
     Autonomous weekly prospecting - discover new B2B SaaS companies using ALL 4 collectors:
     1. General Tavily search
@@ -172,7 +172,7 @@ def discover_new_prospects() -> List[Dict]:
             max_results=15
         )
         # Convert signals to prospects
-        press_prospects = signals_to_prospects(press_signals, seen_domains)
+        press_prospects = signals_to_prospects(press_signals, seen_domains, icp_config)
         all_prospects.extend(press_prospects)
         logger.info(f"Press releases: {len(press_prospects)} prospects discovered")
     except Exception as e:
@@ -187,7 +187,7 @@ def discover_new_prospects() -> List[Dict]:
             max_results=15
         )
         # Convert signals to prospects
-        job_prospects = signals_to_prospects(job_signals, seen_domains)
+        job_prospects = signals_to_prospects(job_signals, seen_domains, icp_config)
         all_prospects.extend(job_prospects)
         logger.info(f"Job boards: {len(job_prospects)} prospects discovered")
     except Exception as e:
@@ -202,7 +202,7 @@ def discover_new_prospects() -> List[Dict]:
             max_results=15
         )
         # Convert signals to prospects
-        launch_prospects = signals_to_prospects(launch_signals, seen_domains)
+        launch_prospects = signals_to_prospects(launch_signals, seen_domains, icp_config)
         all_prospects.extend(launch_prospects)
         logger.info(f"Product launches: {len(launch_prospects)} prospects discovered")
     except Exception as e:
@@ -212,20 +212,14 @@ def discover_new_prospects() -> List[Dict]:
     return all_prospects
 
 
-def signals_to_prospects(signals: List[Dict], seen_domains: set) -> List[Dict]:
+def signals_to_prospects(signals: List[Dict], seen_domains: set, icp_config: Optional[Dict] = None) -> List[Dict]:
     """
     Convert signals to prospect format, filtering for ICP fit
-    
-    Args:
-        signals: List of signals from collectors
-        seen_domains: Set of already-seen domains
-    
-    Returns:
-        List of qualified prospects
     """
     from src.icp_scoring import calculate_icp_fit_score
     
     prospects = []
+    threshold = icp_config.get('threshold', 70) if icp_config else 70
     
     for signal in signals:
         domain = signal.get('domain', '')
@@ -242,13 +236,14 @@ def signals_to_prospects(signals: List[Dict], seen_domains: set) -> List[Dict]:
             icp_data = calculate_icp_fit_score(
                 signal_title=signal.get('title', ''),
                 signal_summary=signal.get('summary', ''),
-                published_date=datetime.now()
+                published_date=datetime.now(),
+                icp_config=icp_config
             )
             icp_score = icp_data['total_score']
             icp_explanation = icp_data['explanation']
         
-        # Only include prospects that meet ICP threshold (>= 70)
-        if icp_score < 70:
+        # Only include prospects that meet ICP threshold
+        if icp_score < threshold:
             continue
         
         seen_domains.add(domain)
