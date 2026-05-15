@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.railpack.com",
-  "provider": "node",
+  "provider": "python",
+  "packages": ["nodejs"],
   "build": {
     "steps": {
       "build": {
         "commands": [
-          "cd frontend && npm install && npm run build && cd .."
+          "cd frontend && npm install && npm run build"
         ]
       }
     }
