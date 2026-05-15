@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "providers": ["python", "node"],
+  "build": {
+    "steps": {
+      "build": {
+        "commands": [
+          "cd frontend && npm install && npm run build && cd .."
+        ]
+      }
+    }
+  },
+  "deploy": {
+    "startCommand": "gunicorn --bind 0.0.0.0:$PORT src.app:app"
+  }
+}
